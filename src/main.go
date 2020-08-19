@@ -2,10 +2,7 @@ package main
 
 import (
 	"bufio"
-	"fiction/src/process_bar"
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/fatih/color"
 	"log"
 	"net/http"
 	urlPkg "net/url"
@@ -14,6 +11,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"fiction/src/process_bar"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/fatih/color"
 )
 
 type fictionList struct {
@@ -49,8 +50,10 @@ var reg = regexp.MustCompile(`<!--\w+-->`)
 var wg = sync.WaitGroup{}
 
 func main() {
-	//url := "https://www.biquge.com.cn/book/11029/" // 修真聊天群
-	url := "https://www.biquge.com.cn/book/36681/" // 斗罗大陆四
+	// url := "https://www.biquge.com.cn/book/11029/" // 修真聊天群
+	// url := "https://www.biquge.com.cn/book/36681/" // 斗罗大陆四
+	url := getUrl()
+	fmt.Printf("您想要爬取的网站地址为 %s\n", color.BlueString(url))
 	u, err := urlPkg.Parse(url)
 	check(err)
 	hostname = u.Hostname()
@@ -134,6 +137,26 @@ func main() {
 	color.Green("\r\033[K写入完成，共用时%.2fs", time.Since(startTime).Seconds())
 }
 
+func getUrl() (url string) {
+	if len(os.Args) > 1 {
+		url = os.Args[1]
+	} else {
+		url = scanUrl()
+	}
+	return
+}
+
+func scanUrl() (url string) {
+	fmt.Print("请输入你想要爬取的网站地址：")
+	n, err := fmt.Scanln(&url)
+	if n == 0 {
+		color.Red("网站地址不能为空")
+		return scanUrl()
+	}
+	check(err)
+	return
+}
+
 func handleContent(next int, item charterContent) (context *charterContent) {
 	if item.index == next {
 		return &item
@@ -173,17 +196,7 @@ func loadContext() {
 }
 
 func getContext(path, hostname, scheme string) []string {
-	var resp *http.Response
-	var err error
-	for {
-		resp, err = http.Get(scheme + "://" + hostname + path)
-		if err == nil {
-			break
-		}
-		log.Println(err)
-	}
-
-	dom, err := goquery.NewDocumentFromReader(resp.Body)
+	dom, err := getDomRecursion(scheme + "://" + hostname + path)
 	check(err)
 
 	ret := make([]string, 0)
@@ -199,18 +212,27 @@ func getContext(path, hostname, scheme string) []string {
 	return ret
 }
 
-func check(err error) {
-	//defer func() {
-	//	if err := recover(); err != nil {
-	//		switch err.(type) {
-	//		case *process_bar.Error:
-	//			log.Println("进度条异常", err)
-	//		default:
-	//			log.Panicln(reflect.TypeOf(err))
-	//		}
-	//	}
-	//}()
+func getDomRecursion(url string) (dom *goquery.Document, err error) {
+	resp, err := http.Get(url)
 	if err != nil {
+		return getDomRecursion(url)
+	}
+	defer func() {
+		check(resp.Body.Close())
+	}()
+	return goquery.NewDocumentFromReader(resp.Body)
+}
+
+type ErrHandleFunc func(error)
+
+func check(err error) {
+	handleCheck(err, func(err error) {
 		panic(err)
+	})
+}
+
+func handleCheck(err error, handleFunc ErrHandleFunc) {
+	if err != nil {
+		handleFunc(err)
 	}
 }
