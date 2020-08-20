@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -45,17 +46,29 @@ var hostname string
 var scheme string
 var charterMap = make(map[int]charterContent)
 var processBar *process_bar.ProcessBar
-var reg = regexp.MustCompile(`<!--\w+-->`)
+var reg = regexp.MustCompile(`(<!--\w+-->)|(<script>\w+</script>)`)
 
 var wg = sync.WaitGroup{}
 
+var ErrRequest = errors.New("请求失败")
+
 func main() {
+	defer func() {
+		err := recover()
+		if err != nil {
+			switch err.(type) {
+			default:
+				log.Println(err)
+			}
+		}
+	}()
 	// url := "https://www.biquge.com.cn/book/11029/" // 修真聊天群
 	// url := "https://www.biquge.com.cn/book/36681/" // 斗罗大陆四
 	url := getUrl()
 	fmt.Printf("您想要爬取的网站地址为 %s\n", color.BlueString(url))
 	u, err := urlPkg.Parse(url)
 	check(err)
+	fmt.Print("即将开始爬取...\r")
 	hostname = u.Hostname()
 	scheme = u.Scheme
 	startTime := time.Now()
@@ -67,7 +80,7 @@ func main() {
 			break
 		}
 		if i == 2 {
-			log.Panicln("请求失败")
+			panic(ErrRequest)
 		} else {
 			log.Printf("请求失败，正在第%d次重试", i+1)
 		}
@@ -97,7 +110,7 @@ func main() {
 			close(charterChan)
 		}()
 		ret := dom.Find("#list dl dd a")
-		processBar = process_bar.New(ret.Length(), 100)
+		processBar = process_bar.New(ret.Length(), 60)
 		processBar.SuccessString = color.GreenString("Success!")
 		processBar.Start()
 		ret.Each(func(i int, selection *goquery.Selection) {
@@ -111,7 +124,7 @@ func main() {
 		})
 	}()
 
-	f, err := os.Create("results/" + fiction.title + "（爬虫）.txt")
+	f, err := os.Create("results/" + fiction.title + ".txt")
 	check(err)
 	w := bufio.NewWriter(f)
 	_, err = w.WriteString(fmt.Sprintf("【%s】\n", fiction.title))
@@ -139,7 +152,7 @@ func main() {
 
 func getUrl() (url string) {
 	if len(os.Args) > 1 {
-		url = os.Args[1]
+		url = strings.TrimSpace(os.Args[1])
 	} else {
 		url = scanUrl()
 	}
@@ -151,7 +164,7 @@ func scanUrl() (url string) {
 	n, err := fmt.Scanln(&url)
 	if n == 0 {
 		color.Red("网站地址不能为空")
-		return scanUrl()
+		return strings.TrimSpace(scanUrl())
 	}
 	check(err)
 	return
@@ -189,15 +202,23 @@ func loadContext() {
 		charterChan <- charterContent{
 			index:   m.index,
 			title:   m.title,
-			content: getContext(m.path, hostname, scheme),
+			content: getContext(m.path, hostname, scheme, m.title),
 		}
 		check(processBar.Advance())
 	}
 }
 
-func getContext(path, hostname, scheme string) []string {
-	dom, err := getDomRecursion(scheme + "://" + hostname + path)
-	check(err)
+func getContext(path, hostname, scheme, title string) []string {
+	dom, err := getDomRecursion(scheme+"://"+hostname+path, 0)
+	if err != nil {
+		if err, ok := err.(*charterErr); ok {
+			err.title = title
+			fmt.Println(err.Error())
+		} else {
+			fmt.Println("出现未知错误，跳过该章节")
+		}
+		return nil
+	}
 
 	ret := make([]string, 0)
 	content, err := dom.Find("#content").Html()
@@ -212,10 +233,29 @@ func getContext(path, hostname, scheme string) []string {
 	return ret
 }
 
-func getDomRecursion(url string) (dom *goquery.Document, err error) {
+type charterErr struct {
+	title string
+	url   string
+}
+
+func (e *charterErr) Error() string {
+	if len(e.title) == 0 {
+		return fmt.Sprintf("章节加载失败: [%s]", e.url)
+	}
+	return fmt.Sprintf("章节加载失败: %s[%s]", e.title, e.url)
+}
+
+func getDomRecursion(url string, count int) (dom *goquery.Document, err error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return getDomRecursion(url)
+		if count < 100 {
+			count++
+			return getDomRecursion(url, count)
+		} else {
+			if e, ok := err.(*urlPkg.Error); ok {
+				return nil, &charterErr{url: e.URL}
+			}
+		}
 	}
 	defer func() {
 		check(resp.Body.Close())
