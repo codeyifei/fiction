@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"fiction/src/process_bar"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/codeyifei/fiction/src/process_bar"
 	"github.com/fatih/color"
 )
 

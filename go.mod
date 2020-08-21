@@ -1,4 +1,4 @@
-module fiction
+module github.com/codeyifei/fiction
 
 go 1.15
 
