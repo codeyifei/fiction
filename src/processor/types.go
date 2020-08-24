@@ -6,7 +6,6 @@ type Scheme string
 
 const (
 	HttpsScheme Scheme = "https"
-	HttpScheme         = "http"
 )
 
 type Config struct {
@@ -16,12 +15,22 @@ type Config struct {
 }
 
 type ReptileDriver interface {
-	LoadMenuPage() (*goquery.Document, error)
-	GetFictionTitle(*goquery.Document) string
-	GetMenu(*goquery.Document) ([]string, error)
+	// 获取最大goroutine数量
+	GetMaxGoroutineQuantity() (quantity int)
+	// 获取菜单页
+	LoadMenuPage() (dom *goquery.Document, err error)
+	// 获取正文页
+	LoadContentPage(path string) (dom *goquery.Document, err error)
+	// 获取小说标题
+	GetFictionTitle(dom *goquery.Document) (title string)
+	// 获取菜单
+	GetMenu(dom *goquery.Document) (menus []*MenuMeta)
+	// 获取章节正文
+	GetContent(dom *goquery.Document) (content []string, err error)
 }
 
 type MenuMeta struct {
+	Index int
 	Title string
 	Path  string
 }

@@ -3,6 +3,8 @@ package biquge
 import (
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/codeyifei/fiction/src/processor"
@@ -14,22 +16,28 @@ const (
 	contentElement             = "#content"
 )
 
-type Drive struct {
-	Config               *processor.Config
-	MaxGoroutineQuantity int
-	// MenuChan
+type drive struct {
+	config               *processor.Config
+	maxGoroutineQuantity uint8
 }
 
-func New(seed string) (drive *Drive) {
-	return &Drive{Config: &processor.Config{
-		Host:   host,
-		Seed:   seed,
-		Scheme: scheme,
-	}}
+func New(seed string, maxGoroutineQuantity uint8) *drive {
+	return &drive{
+		config: &processor.Config{
+			Host:   host,
+			Seed:   seed,
+			Scheme: scheme,
+		},
+		maxGoroutineQuantity: maxGoroutineQuantity,
+	}
 }
 
-func (d *Drive) LoadMenuPage() (*goquery.Document, error) {
-	u := fmt.Sprintf("%s://%s%s", d.Config.Scheme, d.Config.Host, d.Config.Seed)
+func (d *drive) GetMaxGoroutineQuantity() int {
+	return int(d.maxGoroutineQuantity)
+}
+
+func (d *drive) LoadMenuPage() (*goquery.Document, error) {
+	u := fmt.Sprintf("%s://%s%s", d.config.Scheme, d.config.Host, d.config.Seed)
 	resp, err := http.Get(u)
 	if err != nil {
 		return nil, err
@@ -39,8 +47,8 @@ func (d *Drive) LoadMenuPage() (*goquery.Document, error) {
 	return goquery.NewDocumentFromReader(resp.Body)
 }
 
-func (d *Drive) LoadContentPage(path string) (*goquery.Document, error) {
-	u := fmt.Sprintf("%s://%s%s", d.Config.Scheme, d.Config.Host, path)
+func (d *drive) LoadContentPage(path string) (*goquery.Document, error) {
+	u := fmt.Sprintf("%s://%s%s", d.config.Scheme, d.config.Host, path)
 	resp, err := http.Get(u)
 	if err != nil {
 		return nil, err
@@ -50,14 +58,37 @@ func (d *Drive) LoadContentPage(path string) (*goquery.Document, error) {
 	return goquery.NewDocumentFromReader(resp.Body)
 }
 
-func (d *Drive) GetFictionTitle(dom *goquery.Document) string {
+func (d *drive) GetFictionTitle(dom *goquery.Document) string {
 	return dom.Find(fictionTitleElement).Text()
 }
 
-// func (d *Drive) GetMenu(dom *goquery.Document) ([]string, error) {
-// 	 dom.Find(menuElement).
-// }
+func (d *drive) GetMenu(dom *goquery.Document) (menus []*processor.MenuMeta) {
+	nodes := dom.Find(menuElement)
+	menus = make([]*processor.MenuMeta, nodes.Length())
+	nodes.Each(func(i int, selection *goquery.Selection) {
+		path, _ := selection.Attr("href")
+		menus = append(menus, &processor.MenuMeta{
+			Index: i,
+			Title: selection.Text(),
+			Path:  path,
+		})
+	})
+	return
+}
 
-// func (d *Drive) getContent(dom *goquery.Document) ([]string, error) {
-//
-// }
+func (d *drive) GetContent(dom *goquery.Document) (ret []string, err error) {
+	content, err := dom.Find(contentElement).Html()
+	if err != nil {
+		return
+	}
+	reg := regexp.MustCompile(`(<!--\w+-->)|(<script>\w+</script>)`)
+	content = reg.ReplaceAllString(content, "")
+	ret = make([]string, 10)
+	for _, r := range strings.Split(content, "<br/>") {
+		r = strings.TrimSpace(r)
+		if len(r) > 0 {
+			ret = append(ret, r)
+		}
+	}
+	return
+}
