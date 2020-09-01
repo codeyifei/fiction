@@ -1,6 +1,7 @@
 package biquge
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -22,6 +23,9 @@ type drive struct {
 }
 
 func New(seed string, maxGoroutineQuantity uint8) *drive {
+	if len(seed) == 0 {
+		panic(errors.New("种子路径不能为空"))
+	}
 	return &drive{
 		config: &processor.Config{
 			Host:   host,
@@ -62,18 +66,21 @@ func (d *drive) GetFictionTitle(dom *goquery.Document) string {
 	return dom.Find(fictionTitleElement).Text()
 }
 
-func (d *drive) GetMenu(dom *goquery.Document) (menus []*processor.MenuMeta) {
+func (d *drive) GetMenu(dom *goquery.Document) <-chan *processor.MenuMeta {
 	nodes := dom.Find(menuElement)
-	menus = make([]*processor.MenuMeta, nodes.Length())
-	nodes.Each(func(i int, selection *goquery.Selection) {
-		path, _ := selection.Attr("href")
-		menus = append(menus, &processor.MenuMeta{
-			Index: i,
-			Title: selection.Text(),
-			Path:  path,
+	menus := make(chan *processor.MenuMeta)
+	go func() {
+		nodes.Each(func(i int, selection *goquery.Selection) {
+			path, _ := selection.Attr("href")
+			menus <- &processor.MenuMeta{
+				Index: i,
+				Title: selection.Text(),
+				Path:  path,
+			}
 		})
-	})
-	return
+		close(menus)
+	}()
+	return menus
 }
 
 func (d *drive) GetContent(dom *goquery.Document) (ret []string, err error) {

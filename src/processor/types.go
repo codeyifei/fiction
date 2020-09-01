@@ -24,7 +24,7 @@ type ReptileDriver interface {
 	// 获取小说标题
 	GetFictionTitle(dom *goquery.Document) (title string)
 	// 获取菜单
-	GetMenu(dom *goquery.Document) (menus []*MenuMeta)
+	GetMenu(dom *goquery.Document) (menus <-chan *MenuMeta)
 	// 获取章节正文
 	GetContent(dom *goquery.Document) (content []string, err error)
 }
